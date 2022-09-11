@@ -49,14 +49,14 @@ class TFIDFWrapper:
 
     def fit(self, dataset: List) -> "TFIDFWrapper":
         self.tfidf = TfidfVectorizer(
-            use_idf=True, stop_words=None, min_df=0, tokenizer=self.p.tokenize
+            use_idf=True, stop_words=None, min_df=0, tokenizer=self.p.tokenize, token_pattern=None
         )
         dataset = list(map(lambda x: " ".join(x), dataset))
         self.tfidf = self.tfidf.fit(dataset)
         return self
 
     def get_embeddings(self, tokens: list) -> np.ndarray:
-        keys = np.array(self.tfidf.get_feature_names())
+        keys = np.array(self.tfidf.get_feature_names_out())
 
         tfidf = self.tfidf.transform([" ".join(tokens)]).toarray()[0]
 
@@ -235,7 +235,7 @@ class Doc2VecLM:
         total_loss /= n_lines
         return total_loss
 
-    def fit(self, corpus, eval_percent: float = 0.2):
+    def fit(self, corpus, eval_percent: float = 0.2) -> "Doc2VecLM":
         total_examples = len(corpus)
         split_int = int(total_examples * (1 - eval_percent))
 
@@ -258,15 +258,12 @@ class Doc2VecLM:
         )
         print("EVAL LOSS", eval_loss)
 
-    def heat(self, probas, temperature=0.1):
-        preds = torch.log(probas) / temperature
-        exp_preds = torch.exp(preds)
-        probas = exp_preds / torch.sum(exp_preds)
-        return probas
+        return self
 
     def generate(self, tokens: list = None, seq_len: int = None) -> str:
         if tokens is None:
-            tokens = ["pad", "pad", "bos"]
+            tokens = ["pad"] * self.last_n
+            tokens = tokens + ["bos"]
             tokens += [self.reversed_vocab[random.randint(0, self.vocab_size - 1)]]
 
         context, last_n_embeddings = self.get_embeddings(tokens)
@@ -288,14 +285,13 @@ class Doc2VecLM:
                 context, last_n_embeddings = self.get_embeddings([word])
             return " ".join(tokens)
         else:
-            if seq_len:
-                for i in range(seq_len):
-                    id = torch.argmax(self.classifier(context, last_n_embeddings)).item()
-                    word = self.reversed_vocab[id]
-                    if word == "eos":
-                        return " ".join(tokens)
-                    tokens += [word]
-                    context, last_n_embeddings = self.get_embeddings([word])
+            for i in range(seq_len):
+                id = torch.argmax(self.classifier(context, last_n_embeddings)).item()
+                word = self.reversed_vocab[id]
+                if word == "eos":
+                    return " ".join(tokens)
+                tokens += [word]
+                context, last_n_embeddings = self.get_embeddings([word])
 
     def save_model(self, path_to_model: str) -> None:
         if not path_to_model.endswith("pkl"):

@@ -1,0 +1,1 @@
+python generate.py --model model2.pkl --prefix "Бог ел" --length 5
