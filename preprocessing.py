@@ -2,6 +2,9 @@ from gensim.utils import tokenize
 
 
 class Preprocessor:
+    def __init__(self, mode: str = "test"):
+        self.mode = mode.lower()
+
     @staticmethod
     def delete_punct(sentence: str) -> str:
         sentence = "".join([c for c in sentence if c == " " or c.isalpha()])
@@ -14,12 +17,12 @@ class Preprocessor:
 
         return tokenized_line
 
-    @staticmethod
-    def add_special_tokens(line: list) -> list:
+    def add_special_tokens(self, line: list) -> list:
         line.insert(0, "pad")
         line.insert(1, "pad")
         line.insert(2, "bos")
-        line.insert(len(line), "eos")
+        if self.mode == "train":
+            line.insert(len(line), "eos")
         return line
 
     def preprocess(self, sentences: list) -> list:

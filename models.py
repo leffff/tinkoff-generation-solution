@@ -1,6 +1,6 @@
 import pickle
 import random
-from typing import Iterable, List, Tuple, Union
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -75,56 +75,78 @@ class TFIDFWrapper:
         return self.get_embeddings(tokens)
 
 
-# TODO: separarate linear model
+class Classifier(nn.Module):
+    def __init__(self, embedding_dim, hidden_dim, last_n, vocab_size):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.embedding_dim = embedding_dim
+        self.last_n = last_n
+        self.vocab_size = vocab_size
+
+        self.context_linear = nn.Linear(embedding_dim, hidden_dim)
+        self.last_n_linears = [nn.Linear(embedding_dim, hidden_dim)] * self.last_n
+        self.global_linear = nn.Linear(hidden_dim * (self.last_n + 1), hidden_dim)
+        self.classifier = nn.Linear(hidden_dim, self.vocab_size)
+
+    def forward(self, context, last_n_embeddings) -> torch.tensor:
+        context = context.float()
+        last_n_embeddings = last_n_embeddings.float()
+
+        x_context = [self.context_linear(context)]
+        x_last_n = [self.last_n_linears[i](last_n_embeddings[i]) for i in range(self.last_n)]
+
+        x = self.global_linear(torch.cat(x_context + x_last_n))
+        probabilities = self.classifier(x)
+
+        return probabilities
 
 
-class Doc2Vec(nn.Module):
+class Doc2VecLM:
     def __init__(
-        self,
-        word2vec,
-        tfidf,
-        loss_function,
-        optimizer,
-        lr,
-        device,
-        vocab,
-        vocab_size,
-        embedding_dim,
-        hidden_dim,
-        last_n: int,
+            self,
+            word2vec: Word2VecWrapper = None,
+            tfidf: TFIDFWrapper = None,
+            loss_function: nn.Module = None,
+            optimizer: Any = None,
+            lr: float = None,
+            device: torch.device = None,
+            vocab: dict = None,
+            vocab_size: int = None,
+            embedding_dim: int = None,
+            hidden_dim: int = None,
+            last_n: int = None,
     ):
         super().__init__()
         self.word2vec: Word2VecWrapper = word2vec
         self.tfidf: TFIDFWrapper = tfidf
+        self.classifier = Classifier(embedding_dim, hidden_dim, last_n, vocab_size)
+
         self.loss_function = loss_function
-        self.optimizer = optimizer
         self.lr = lr
+        self.optimizer = optimizer(self.classifier.parameters(), lr=self.lr)
         self.device = device
+
         self.vocab = vocab
         self.reversed_vocab = dict()
         for key in self.vocab:
             value = self.vocab[key]
             self.reversed_vocab[value] = key
+
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
         self.last_n = last_n
+
         self.context: np.ndarray = np.zeros(self.embedding_dim)
         self.last_n_embeddings: np.ndarray = np.zeros((self.last_n, self.embedding_dim))
         self.current_seq_len: int = 0
-
-        self.context_linear = nn.Linear(embedding_dim, hidden_dim).float()
-        self.last_n_linears = [
-            nn.Linear(embedding_dim, hidden_dim).float()
-        ] * self.last_n
-        self.global_linear = nn.Linear(hidden_dim * (self.last_n + 1), hidden_dim)
-        self.classifier = nn.Linear(hidden_dim, self.vocab_size)
 
     def get_embeddings(self, tokens: list) -> Tuple[torch.Tensor, torch.Tensor]:
         tfidf = self.tfidf(tokens)
         embeddings = self.word2vec(tokens)
 
-        self.last_n_embeddings = np.vstack([self.last_n_embeddings, embeddings])[-3:]
+        self.last_n_embeddings = np.vstack([self.last_n_embeddings, embeddings])[-self.last_n:]
         self.new_state = np.mean(embeddings * tfidf.reshape(-1, 1), axis=0)
+        # self.new_state = np.mean(embeddings, axis=0)
 
         new_seq_len = len(tokens)
         whole_seq_len = self.current_seq_len + new_seq_len
@@ -141,22 +163,7 @@ class Doc2Vec(nn.Module):
         self.last_n_embeddings: np.ndarray = np.zeros((self.last_n, self.embedding_dim))
         self.current_seq_len: int = 0
 
-    def forward(self, context, last_n_embeddings) -> torch.tensor:
-        context = context.float()
-        last_n_embeddings = last_n_embeddings.float()
-
-        x_context = [self.context_linear(context)]
-        x_last_n = [
-            self.last_n_linears[i](last_n_embeddings[i]) for i in range(self.last_n)
-        ]
-
-        x = self.global_linear(torch.cat(x_context + x_last_n))
-        probabilities = self.classifier(x)
-
-        return probabilities
-
-    @staticmethod
-    def train_epoch(model, optimizer, loss_function, device, vocab, lines):
+    def train_epoch(self, model, optimizer, loss_function, device, vocab, lines):
         model.to(device)
         model.train()
 
@@ -171,7 +178,7 @@ class Doc2Vec(nn.Module):
 
             sentence_loss = 0.0
             for i in range(split_index, seq_len - 1):
-                context, last_n_embeddings = model.get_embeddings(input)
+                context, last_n_embeddings = self.get_embeddings(input)
                 context, last_n_embeddings = context.to(device), last_n_embeddings.to(
                     device
                 )
@@ -188,12 +195,12 @@ class Doc2Vec(nn.Module):
 
             sentence_loss /= seq_len // 2 - 1
             total_loss += sentence_loss
+            self.reset()
 
         total_loss /= n_lines
         return total_loss
 
-    @staticmethod
-    def eval_epoch(model, loss_function, device, vocab, lines):
+    def eval_epoch(self, model, loss_function, device, vocab, lines):
         model.to(device)
         model.eval()
 
@@ -208,7 +215,7 @@ class Doc2Vec(nn.Module):
 
             sentence_loss = 0.0
             for i in range(split_index, seq_len - 1):
-                context, last_n_embeddings = model.get_embeddings(input)
+                context, last_n_embeddings = self.get_embeddings(input)
                 context, last_n_embeddings = context.to(device), last_n_embeddings.to(
                     device
                 )
@@ -223,14 +230,18 @@ class Doc2Vec(nn.Module):
 
             sentence_loss /= seq_len // 2 - 1
             total_loss += sentence_loss
+            self.reset()
 
         total_loss /= n_lines
         return total_loss
 
-    def fit(self, corpus):
+    def fit(self, corpus, eval_percent: float = 0.2):
+        total_examples = len(corpus)
+        split_int = int(total_examples * (1 - eval_percent))
+
         train_loss = self.train_epoch(
-            model=self.model,
-            lines=corpus[:9000],
+            model=self.classifier,
+            lines=corpus[:split_int],
             optimizer=self.optimizer,
             loss_function=self.loss_function,
             device=self.device,
@@ -239,38 +250,66 @@ class Doc2Vec(nn.Module):
         print("TRAIN LOSS", train_loss)
 
         eval_loss = self.eval_epoch(
-            model=self.model,
-            lines=self.preprocessed_text[9000:],
+            model=self.classifier,
+            lines=corpus[split_int:],
             loss_function=self.loss_function,
             device=self.device,
             vocab=self.vocab,
         )
         print("EVAL LOSS", eval_loss)
 
-    def generate(self, tokens: list = None, seq_len: int = None) -> str:
-        context, last_n_embeddings = self.get_embeddings(tokens)
+    def heat(self, probas, temperature=0.1):
+        preds = torch.log(probas) / temperature
+        exp_preds = torch.exp(preds)
+        probas = exp_preds / torch.sum(exp_preds)
+        return probas
 
+    def generate(self, tokens: list = None, seq_len: int = None) -> str:
         if tokens is None:
             tokens = ["pad", "pad", "bos"]
             tokens += [self.reversed_vocab[random.randint(0, self.vocab_size - 1)]]
 
+        context, last_n_embeddings = self.get_embeddings(tokens)
+
         if seq_len:
             for i in range(seq_len):
-                id = torch.argmax(self.forward(context, last_n_embeddings))
+                probas = self.classifier(context, last_n_embeddings).softmax(0)
+                probas, indices = torch.sort(probas)
+
+                j = -1
+                id = indices[j].item()
                 word = self.reversed_vocab[id]
+                while word in tokens:
+                    j -= 1
+                    id = indices[j].item()
+                    word = self.reversed_vocab[id]
+
                 tokens += [word]
                 context, last_n_embeddings = self.get_embeddings([word])
             return " ".join(tokens)
         else:
             if seq_len:
                 for i in range(seq_len):
-                    id = torch.argmax(self.forward(context, last_n_embeddings))
+                    id = torch.argmax(self.classifier(context, last_n_embeddings)).item()
                     word = self.reversed_vocab[id]
                     if word == "eos":
                         return " ".join(tokens)
                     tokens += [word]
                     context, last_n_embeddings = self.get_embeddings([word])
 
-    def save_model(self, name: str) -> None:
-        with open(f"{name}.pkl", "wb") as fout:
+    def save_model(self, path_to_model: str) -> None:
+        if not path_to_model.endswith("pkl"):
+            raise ValueError("Model extension must be .pkl")
+
+        with open(f"{path_to_model}", "wb") as fout:
             pickle.dump(self, file=fout)
+
+    @staticmethod
+    def load_model(path_to_model: str) -> "Doc2VecLM":
+        if not path_to_model.endswith("pkl"):
+            raise ValueError("Model extension must be .pkl")
+
+        with open(f"{path_to_model}", "rb") as fin:
+            model = pickle.load(file=fin)
+
+        return model

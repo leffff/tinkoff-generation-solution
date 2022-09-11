@@ -1,20 +1,18 @@
 import torch
-from gensim.models import Word2Vec
 from torch import nn
-from tqdm import tqdm
 
-from models import Doc2Vec, TFIDFWrapper, Word2VecWrapper
+from models import Doc2VecLM, TFIDFWrapper, Word2VecWrapper
 from preprocessing import Preprocessor, preprocess_bible
 
 if __name__ == "__main__":
-    preprocessor = Preprocessor()
+    preprocessor = Preprocessor(mode="train")
     word2vec = Word2VecWrapper(vector_size=128, window=5, workers=-1)
 
-    with open("data/bible.txt", "r") as fin:
+    with open("data/train.txt", "r") as fin:
         text = preprocess_bible(fin.readlines())
         preprocessed_text = [el for el in preprocessor.preprocess(text) if len(el) > 6][
-            :10000
-        ]
+                            :11000
+                            ]
 
     tfidf = TFIDFWrapper()
     tfidf.fit(preprocessed_text)
@@ -23,7 +21,7 @@ if __name__ == "__main__":
     vocab = word2vec.get_vocab()
     vocab_size = len(list(vocab.keys()))
 
-    model = Doc2Vec(
+    model = Doc2VecLM(
         word2vec=word2vec,
         tfidf=tfidf,
         loss_function=nn.CrossEntropyLoss(),
@@ -39,4 +37,4 @@ if __name__ == "__main__":
 
     model.fit(preprocessed_text)
 
-    model.save("model")
+    model.save_model("model2.pkl")
