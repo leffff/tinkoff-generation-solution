@@ -4,7 +4,7 @@ from models import Doc2VecLM
 from preprocessing import Preprocessor
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Greneration')
+    parser = argparse.ArgumentParser(description='Generation')
     parser.add_argument('--model', type=str, help='Model load path')
     parser.add_argument('--prefix', type=str, default=None, help='Input to model')
     parser.add_argument('--length', type=int, default=5, help='Generation length')
