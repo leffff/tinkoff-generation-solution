@@ -66,7 +66,10 @@ class TFIDFWrapper:
 
         scores_dict = dict()
         for i in range(len(keys)):
-            scores_dict[keys[i]] = tfidf[i]
+            if keys[i] == "pad":
+                scores_dict[keys[i]] = 0
+            else:
+                scores_dict[keys[i]] = tfidf[i]
 
         scores = np.array([scores_dict[token] for token in tokens])
         return scores
@@ -272,13 +275,11 @@ class Doc2VecLM:
             for i in range(seq_len):
                 probas = self.classifier(context, last_n_embeddings).softmax(0)
                 probas, indices = torch.sort(probas)
-
-                j = -1
-                id = indices[j].item()
+                random_samples = 20
+                id = indices[-random_samples:][random.randint(0, random_samples - 1)].item()
                 word = self.reversed_vocab[id]
                 while word in tokens:
-                    j -= 1
-                    id = indices[j].item()
+                    id = indices[-random_samples:][random.randint(0, random_samples - 1)].item()
                     word = self.reversed_vocab[id]
 
                 tokens += [word]
@@ -286,8 +287,14 @@ class Doc2VecLM:
             return " ".join(tokens)
         else:
             for i in range(seq_len):
-                id = torch.argmax(self.classifier(context, last_n_embeddings)).item()
+                probas = self.classifier(context, last_n_embeddings).softmax(0)
+                probas, indices = torch.sort(probas)
+                random_samples = 20
+                id = indices[-random_samples:][random.randint(0, random_samples - 1)].item()
                 word = self.reversed_vocab[id]
+                while word in tokens:
+                    id = indices[-random_samples:][random.randint(0, random_samples - 1)].item()
+                    word = self.reversed_vocab[id]
                 if word == "eos":
                     return " ".join(tokens)
                 tokens += [word]

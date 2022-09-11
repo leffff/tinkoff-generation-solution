@@ -1,1 +1,1 @@
-python generate.py --model model2.pkl --prefix "Бог ел" --length 5
+python generate.py --model model.pkl --length 10 --prefix "Бог сказал"

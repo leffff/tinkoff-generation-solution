@@ -2,8 +2,9 @@ from gensim.utils import tokenize
 
 
 class Preprocessor:
-    def __init__(self, mode: str = "test"):
+    def __init__(self, mode: str = "test", padding_size=3):
         self.mode = mode.lower()
+        self.padding_size = padding_size
 
     @staticmethod
     def delete_punct(sentence: str) -> str:
@@ -18,8 +19,9 @@ class Preprocessor:
         return tokenized_line
 
     def add_special_tokens(self, line: list) -> list:
-        line.insert(0, "pad")
-        line.insert(1, "pad")
+        for i in range(self.padding_size):
+            line.insert(0, "pad")
+
         line.insert(2, "bos")
         if self.mode == "train":
             line.insert(len(line), "eos")
