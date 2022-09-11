@@ -1,5 +1,5 @@
 # tinkoff-generation-solution
-### Мое решение 6 задачи отбора на Тинькофф поколение
+### Мое решение 6 задачи отбора на [Тинькофф поколение](https://fintech.tinkoff.ru/school/generation/)
 
 Описание модели ```Doc2VecLM```: </br>
 Модель представвляет собой гибрид Word2Vec (Skipgram), TF-IDF и линейного классификатора
